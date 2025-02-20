@@ -37,15 +37,12 @@ public class Grep {
   public static void main(String[] args) {
     try {
       CommandLineParser parser = new DefaultParser();
-      Options options = new Options();
-      options.addOption(new Option("s", "search", true, "search in the files"));
-      options.addOption(new Option("f", "file", true, "the file directory"));
-      options.addOption(new Option("v", "verbose", false, "verbose output"));
+      Options options = createOptions();
       CommandLine cli = parser.parse(options, args);
-      String searchKeyword = cli.getOptionValue('s');
-      String filePath = cli.getOptionValue('f');
-      commandLineArguments = new CommandLineArguments(searchKeyword, filePath, cli.hasOption('v'));
+
+      commandLineArguments = parseCommandLineArguments(cli);
       VERBOSE = commandLineArguments.isVerbose();
+
       if (VERBOSE) logger.info("Initialising GREP");
 
       Grep grep = new Grep();
@@ -53,6 +50,40 @@ public class Grep {
       grep.execute();
     } catch (ParseException parseException) {
       logger.error(parseException);
+    }
+  }
+
+  private static Options createOptions() {
+    Options options = new Options();
+    options.addOption(new Option("s", "search", true, "search keyword"));
+    options.addOption(new Option("f", "file", true, "file or directory path"));
+    options.addOption(new Option("v", "verbose", false, "verbose output"));
+    return options;
+  }
+
+  private static CommandLineArguments parseCommandLineArguments(CommandLine cli) {
+    String searchKeyword = cli.getOptionValue('s');
+    String filePath = cli.getOptionValue('f');
+    boolean verbose = cli.hasOption('v');
+    return new CommandLineArguments(searchKeyword, filePath, verbose);
+  }
+
+  private void validateCommandLineArguments() {
+    String searchKeyword = commandLineArguments.getSearchKeyword();
+    if (searchKeyword == null || searchKeyword.isEmpty()) {
+      throw new IllegalArgumentException("Please provide search keyword with -s flag");
+    }
+    String filePath = commandLineArguments.getFilePath();
+    if (filePath == null || filePath.isEmpty()) {
+      throw new IllegalArgumentException("Please provide file path with -f flag");
+    }
+    if (filePath.toCharArray()[0] == TILDE) {
+      filePath = filePath.replace(TILDE + "", System.getProperty("user.home"));
+      commandLineArguments.setFilePath(filePath);
+    }
+    Path path = Paths.get(filePath);
+    if (!Files.exists(path)) {
+      throw new IllegalArgumentException("File Path does not exists : " + filePath);
     }
   }
 
@@ -65,18 +96,7 @@ public class Grep {
         @Override
         public FileVisitResult visitFile(Path path, BasicFileAttributes attrs) throws IOException {
           if (VERBOSE) logger.info("Visiting File : {}", path.toAbsolutePath());
-          File file = path.toFile();
-          try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-            String line = reader.readLine();
-            int lineNumber = 1;
-            while (line != null) {
-              if (line.contains(commandLineArguments.getSearchKeyword())) {
-                logger.info("{}:{}: {}", file.getAbsolutePath(), lineNumber, line);
-              }
-              line = reader.readLine();
-              lineNumber++;
-            }
-          }
+          searchInFile(path);
           return super.visitFile(path, attrs);
         }
       });
@@ -85,22 +105,19 @@ public class Grep {
     }
   }
 
-  private void validateCommandLineArguments() {
-    String searchKeyword = commandLineArguments.getSearchKeyword();
-    if (searchKeyword == null || searchKeyword.isEmpty()) {
-      throw new RuntimeException("Please provide search keyword with -s flag");
-    }
-    String filePath = commandLineArguments.getFilePath();
-    if (filePath == null || filePath.isEmpty()) {
-      throw new RuntimeException("Please provide file path with -f flag");
-    }
-    if (filePath.toCharArray()[0] == TILDE) {
-      filePath = filePath.replace(TILDE + "", System.getProperty("user.home"));
-      commandLineArguments.setFilePath(filePath);
-    }
-    Path path = Paths.get(filePath);
-    if (!Files.exists(path)) {
-      throw new RuntimeException("File Path does not exists : " + filePath);
+  private void searchInFile(Path path) {
+    File file = path.toFile();
+    try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+      String line;
+      int lineNumber = 1;
+      while ((line = reader.readLine()) != null) {
+        if (line.contains(commandLineArguments.getSearchKeyword())) {
+          logger.info("{}:{}: {}", file.getAbsolutePath(), lineNumber, line);
+        }
+        lineNumber++;
+      }
+    } catch (IOException e) {
+      logger.error("Failed to read file: {}", e.getMessage());
     }
   }
 
