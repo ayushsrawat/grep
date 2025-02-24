@@ -5,6 +5,9 @@ import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Handler;
 import java.util.logging.LogRecord;
@@ -12,6 +15,8 @@ import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
 
 public class Util {
+
+  private static final char TILDE = '~';
 
   public static Options createOptions() {
     Options options = new Options();
@@ -30,6 +35,26 @@ public class Util {
       .filePath(filePath)
       .verbose(verbose)
       .build();
+  }
+
+  public static void validateCommandLineArguments(CommandLineArgs cli) {
+    String searchKeyword = cli.getSearchKeyword();
+    if (searchKeyword == null || searchKeyword.isEmpty()) {
+      throw new IllegalArgumentException("Please provide search keyword with -s flag");
+    }
+    String filePath = cli.getFilePath();
+    if (filePath == null || filePath.isEmpty()) {
+      filePath = CommandLineArgs.DEFAULT_FILE_PATH;
+      cli.setFilePath(filePath);
+    }
+    if (filePath.toCharArray()[0] == TILDE) {
+      filePath = filePath.replace(TILDE + "", System.getProperty("user.home"));
+      cli.setFilePath(filePath);
+    }
+    Path path = Paths.get(filePath);
+    if (!Files.exists(path)) {
+      throw new IllegalArgumentException("File Path does not exists : " + filePath);
+    }
   }
 
   /**

@@ -30,7 +30,6 @@ import java.util.logging.Logger;
 public class Grep {
 
   private static final Logger logger = Logger.getLogger(Grep.class.getName());
-  private static final char TILDE = '~';
   private static CommandLineArgs cli;
   private static boolean VERBOSE = false;
 
@@ -45,35 +44,12 @@ public class Grep {
       CommandLine commandLine = parser.parse(options, args);
 
       cli = Util.parseCommandLineArgs(commandLine);
+      Util.validateCommandLineArguments(cli);
       VERBOSE = cli.isVerbose();
-
-      if (VERBOSE) logger.info("Initialising GREP");
-
       Grep grep = new Grep();
-      grep.validateCommandLineArguments();
       grep.execute();
     } catch (ParseException parseException) {
       logger.severe(parseException.getMessage());
-    }
-  }
-
-  private void validateCommandLineArguments() {
-    String searchKeyword = cli.getSearchKeyword();
-    if (searchKeyword == null || searchKeyword.isEmpty()) {
-      throw new IllegalArgumentException("Please provide search keyword with -s flag");
-    }
-    String filePath = cli.getFilePath();
-    if (filePath == null || filePath.isEmpty()) {
-      filePath = CommandLineArgs.DEFAULT_FILE_PATH;
-      cli.setFilePath(filePath);
-    }
-    if (filePath.toCharArray()[0] == TILDE) {
-      filePath = filePath.replace(TILDE + "", System.getProperty("user.home"));
-      cli.setFilePath(filePath);
-    }
-    Path path = Paths.get(filePath);
-    if (!Files.exists(path)) {
-      throw new IllegalArgumentException("File Path does not exists : " + filePath);
     }
   }
 
