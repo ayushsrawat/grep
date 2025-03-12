@@ -1,12 +1,8 @@
 package com.github.drsqrt;
 
-import com.github.drsqrt.config.CommandLineArgs;
-import com.github.drsqrt.util.Util;
-import org.apache.commons.cli.CommandLine;
-import org.apache.commons.cli.CommandLineParser;
-import org.apache.commons.cli.DefaultParser;
-import org.apache.commons.cli.Options;
-import org.apache.commons.cli.ParseException;
+import com.github.drsqrt.cli.Parser;
+import com.github.drsqrt.cli.Args;
+import com.github.drsqrt.config.Configuration;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -20,7 +16,10 @@ import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.EnumSet;
+import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Grep is a search tool <br>
@@ -30,44 +29,51 @@ import java.util.logging.Logger;
 public class Grep {
 
   private static final Logger logger = Logger.getLogger(Grep.class.getName());
-  private static CommandLineArgs cli;
-  private static boolean VERBOSE = false;
+  private boolean verbose = false;
+  private Args cli;
 
   static {
-    Util.configLogger();
+    Configuration.configLogger();
+  }
+
+  private Grep() {
   }
 
   public static void main(String[] args) {
-    try {
-      CommandLineParser parser = new DefaultParser();
-      Options options = Util.createOptions();
-      CommandLine commandLine = parser.parse(options, args);
+    new Grep().execute(args);
+  }
 
-      cli = Util.parseCommandLineArgs(commandLine);
-      Util.validateCommandLineArguments(cli);
-      VERBOSE = cli.isVerbose();
-      Grep grep = new Grep();
-      grep.execute();
-    } catch (ParseException parseException) {
-      logger.severe(parseException.getMessage());
+  private void execute(String[] args) {
+    try {
+      cli = Parser.parseCommandLine(args);
+      verbose = cli.isVerbose();
+      initSearch();
+    } catch (Exception e) {
+      logger.log(Level.SEVERE, e.getMessage());
+      Parser.printHelpFormatter();
+      System.exit(1);
     }
   }
 
-  private void execute() {
-    if (VERBOSE) logger.info("Search Keyword : " + cli.getSearchKeyword());
-    if (VERBOSE) logger.info("File Path :  " + cli.getFilePath() + "\n\n");
-    Path filePath = Paths.get(cli.getFilePath());
-    try {
-      Files.walkFileTree(filePath, EnumSet.of(FileVisitOption.FOLLOW_LINKS), Integer.MAX_VALUE, new SimpleFileVisitor<>() {
-        @Override
-        public FileVisitResult visitFile(Path path, BasicFileAttributes attrs) throws IOException {
-          if (VERBOSE) logger.info("Visiting File : " + path.toAbsolutePath());
-          searchInFile(path);
-          return super.visitFile(path, attrs);
-        }
-      });
-    } catch (IOException e) {
-      logger.severe(e.getMessage());
+  private void initSearch() {
+    if (verbose) logger.info("Search Keyword : " + cli.getSearchKeyword());
+    if (verbose) logger.info("File Path :  " + cli.getWhere() + "\n\n");
+    for (String p : cli.getWhere()) {
+      Path start = Paths.get(p);
+      try {
+        Files.walkFileTree(start, EnumSet.of(FileVisitOption.FOLLOW_LINKS), Integer.MAX_VALUE, new SimpleFileVisitor<>() {
+          @Override
+          public FileVisitResult visitFile(Path path, BasicFileAttributes attrs) throws IOException {
+            if (path.toFile().isFile()) {
+              if (verbose) logger.info("Visiting File : " + path.toAbsolutePath());
+              searchInFile(path);
+            }
+            return super.visitFile(path, attrs);
+          }
+        });
+      } catch (IOException e) {
+        logger.severe(e.getMessage());
+      }
     }
   }
 
@@ -77,13 +83,21 @@ public class Grep {
       String line;
       int lineNumber = 1;
       while ((line = reader.readLine()) != null) {
-        if (line.contains(cli.getSearchKeyword())) {
-          logger.info(file.getAbsolutePath() + ":" + lineNumber + " : " + line);
+        if (cli.isRegex()) {
+          Pattern pattern = Pattern.compile(cli.getSearchKeyword());
+          Matcher matcher = pattern.matcher(line);
+          if (matcher.matches()) {
+            logger.info(file.getAbsolutePath() + ":" + lineNumber + " : " + line);
+          }
+        } else {
+          if (line.contains(cli.getSearchKeyword())) {
+            logger.info(file.getAbsolutePath() + ":" + lineNumber + " : " + line);
+          }
         }
         lineNumber++;
       }
     } catch (IOException e) {
-      logger.severe("Failed to read file: " + e.getMessage());
+      throw new RuntimeException("Failed to read file : " + file.getAbsolutePath());
     }
   }
 

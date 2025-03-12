@@ -1,17 +1,24 @@
-package com.github.drsqrt.config;
+package com.github.drsqrt.cli;
 
-public class CommandLineArgs {
+import java.util.List;
+
+/**
+ * Java Command Line Arguments for GREP
+ */
+public class Args {
 
   public static String DEFAULT_FILE_PATH = ".";
 
   private final String searchKeyword;
-  private String filePath;
+  private List<String> where;
   private final Boolean verbose;
+  private final Boolean isRegex;
 
-  public CommandLineArgs(Builder builder) {
+  public Args(Builder builder) {
     this.searchKeyword = builder.searchKeyword;
-    this.filePath = builder.filePath;
+    this.where = builder.where;
     this.verbose = builder.verbose;
+    this.isRegex = builder.isRegex;
   }
 
   public static Builder builder() {
@@ -22,29 +29,31 @@ public class CommandLineArgs {
     return this.searchKeyword;
   }
 
-  public String getFilePath() {
-    return this.filePath;
+  public List<String> getWhere() {
+    return this.where;
   }
 
   public Boolean isVerbose() {
     return this.verbose;
   }
 
-  public void setFilePath(String filePath) {
-    this.filePath = filePath;
+  public Boolean isRegex() {
+    return this.isRegex;
+  }
+
+  public void setWhere(List<String> where) {
+    this.where = where;
   }
 
   public static final class Builder {
 
     private String searchKeyword;
-    private String filePath = ".";
+    private List<String> where;
     private Boolean verbose = false;
+    private Boolean isRegex = false;
 
-    public CommandLineArgs build() {
-      if (searchKeyword == null || searchKeyword.isEmpty()) {
-        throw new IllegalArgumentException("Search Keyword is required.");
-      }
-      return new CommandLineArgs(this);
+    public Args build() {
+      return new Args(this);
     }
 
     public Builder searchKeyword(String searchKeyword) {
@@ -52,8 +61,8 @@ public class CommandLineArgs {
       return this;
     }
 
-    public Builder filePath(String filePath) {
-      this.filePath = filePath;
+    public Builder where(List<String> where) {
+      this.where = where;
       return this;
     }
 
@@ -61,5 +70,12 @@ public class CommandLineArgs {
       this.verbose = verbose;
       return this;
     }
+
+    public Builder isRegex(Boolean isRegex) {
+      this.isRegex = isRegex;
+      return this;
+    }
+
   }
+
 }
