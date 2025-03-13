@@ -7,7 +7,8 @@ import java.util.List;
  */
 public class Args {
 
-  public static String DEFAULT_FILE_PATH = ".";
+  public static final String DEFAULT_FILE_PATH = ".";
+  public static final Integer MAX_LINE_LENGTH = 120;
 
   private final String searchKeyword;
   private List<String> where;
