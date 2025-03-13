@@ -83,7 +83,6 @@ public class Grep {
     }
   }
 
-  //todo
   private void searchInFile(File file) {
     if (isBinaryFile(file)) return;
     try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
