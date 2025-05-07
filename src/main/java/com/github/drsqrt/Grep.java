@@ -1,8 +1,12 @@
 package com.github.drsqrt;
 
-import com.github.drsqrt.cli.Args;
-import com.github.drsqrt.cli.Parser;
-import com.github.drsqrt.config.Configuration;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Option;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.ParseException;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -15,8 +19,15 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.logging.ConsoleHandler;
+import java.util.logging.Handler;
 import java.util.logging.Level;
+import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import java.util.logging.SimpleFormatter;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -31,10 +42,6 @@ public class Grep {
   private boolean verbose = false;
   private Args cli;
 
-  static {
-    Configuration.configLogger();
-  }
-
   private Grep() {
   }
 
@@ -44,12 +51,13 @@ public class Grep {
 
   private void execute(String[] args) {
     try {
-      cli = Parser.parseCommandLine(args);
+      configLogger();
+      cli = parseCommandLine(args);
       verbose = cli.isVerbose();
       initGrep();
     } catch (Exception e) {
       logger.log(Level.SEVERE, e.getMessage());
-      Parser.printHelpFormatter();
+      printHelpFormatter();
       System.exit(1);
     }
   }
@@ -114,7 +122,7 @@ public class Grep {
     }
   }
 
-  public static boolean isBinaryFile(File file) {
+  public boolean isBinaryFile(File file) {
     double threshold = 0.3; // 30% non-printable characters threshold
     int checkBytes = 100; // Read first 100 bytes
     int nonPrintableCount = 0;
@@ -136,6 +144,164 @@ public class Grep {
       return false;
     }
     return totalRead > 0 && ((double) nonPrintableCount / totalRead) > threshold;
+  }
+  
+  /// PARSER
+  private static final String TILDE = "~";
+  private Args parseCommandLine(String[] args) {
+    try {
+      // todo: remove apache-cli dependency
+      CommandLineParser parser = new DefaultParser();
+      Options options = createOptions();
+      CommandLine commandLine = parser.parse(options, args);
+      Args cli = parseCommandLineArgs(commandLine);
+      validateCommandLineArguments(cli);
+      return cli;
+    } catch (ParseException parseException) {
+      logger.severe(parseException.getMessage());
+      throw new RuntimeException(parseException);
+    }
+  }
+
+  private Options createOptions() {
+    Options options = new Options();
+    options.addOption(new Option("v", "verbose", false, "verbose output"));
+    options.addOption(new Option("r", "regex", false, "search as regex"));
+    return options;
+  }
+
+  private Args parseCommandLineArgs(CommandLine cli) {
+    String[] keywordAndFiles = cli.getArgs();
+    if (keywordAndFiles.length == 0) {
+      throw new IllegalArgumentException("provide search keyword as the first argument");
+    }
+    String searchKeyword = keywordAndFiles[0];
+    List<String> where = new ArrayList<>(Arrays.asList(keywordAndFiles).subList(1, keywordAndFiles.length));
+    boolean verbose = cli.hasOption("v");
+    boolean isRegex = cli.hasOption("r");
+    return Args.builder()
+      .searchKeyword(searchKeyword)
+      .where(where)
+      .verbose(verbose)
+      .isRegex(isRegex)
+      .build();
+  }
+
+  private void validateCommandLineArguments(Args cli) {
+    String searchKeyword = cli.getSearchKeyword();
+    if (searchKeyword == null || searchKeyword.isEmpty()) {
+      throw new IllegalArgumentException("Please provide search keyword with -s flag");
+    }
+    List<String> where = cli.getWhere();
+    if (where.isEmpty()) {
+      where.add(Args.DEFAULT_FILE_PATH);
+    }
+    if (TILDE.equals(where.getFirst())) {
+      where.set(0, System.getProperty("user.home"));
+    }
+    cli.setWhere(where);
+    for (String p : cli.getWhere()) {
+      Path path = Paths.get(p);
+      if (!Files.exists(path)) {
+        throw new IllegalArgumentException("File Path does not exists : " + path);
+      }
+    }
+  }
+
+  public void printHelpFormatter() {
+    new HelpFormatter().printHelp("Grep", createOptions());
+  }
+
+  /// ARGS
+  private static final class Args {
+    public static final String DEFAULT_FILE_PATH = ".";
+    public static final Integer MAX_LINE_LENGTH = 120;
+
+    private final String searchKeyword;
+    private List<String> where;
+    private final Boolean verbose;
+    private final Boolean isRegex;
+
+    public Args(Builder builder) {
+      this.searchKeyword = builder.searchKeyword;
+      this.where = builder.where;
+      this.verbose = builder.verbose;
+      this.isRegex = builder.isRegex;
+    }
+
+    public static Builder builder() {
+      return new Builder();
+    }
+
+    public String getSearchKeyword() {
+      return this.searchKeyword;
+    }
+
+    public List<String> getWhere() {
+      return this.where;
+    }
+
+    public Boolean isVerbose() {
+      return this.verbose;
+    }
+
+    public Boolean isRegex() {
+      return this.isRegex;
+    }
+
+    public void setWhere(List<String> where) {
+      this.where = where;
+    }
+
+    public static final class Builder {
+
+      private String searchKeyword;
+      private List<String> where;
+      private Boolean verbose = false;
+      private Boolean isRegex = false;
+
+      public Args build() {
+        return new Args(this);
+      }
+
+      public Builder searchKeyword(String searchKeyword) {
+        this.searchKeyword = searchKeyword;
+        return this;
+      }
+
+      public Builder where(List<String> where) {
+        this.where = where;
+        return this;
+      }
+
+      public Builder verbose(Boolean verbose) {
+        this.verbose = verbose;
+        return this;
+      }
+
+      public Builder isRegex(Boolean isRegex) {
+        this.isRegex = isRegex;
+        return this;
+      }
+    }
+  }
+
+  ///CONFIGURATIONS
+  public void configLogger() {
+    Logger rootLogger = Logger.getLogger("");
+    Handler[] handlers = rootLogger.getHandlers();
+    for (Handler h : handlers) {
+      rootLogger.removeHandler(h);
+    }
+
+    ConsoleHandler consoleHandler = new ConsoleHandler();
+    consoleHandler.setFormatter(new SimpleFormatter() {
+      @Override
+      public String format(LogRecord record) {
+        return String.format("%s%n", record.getMessage());
+      }
+    });
+    rootLogger.addHandler(consoleHandler);
   }
 
 }
