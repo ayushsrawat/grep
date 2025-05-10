@@ -2,8 +2,7 @@ package main
 
 import (
 	"bufio"
-	"errors"
-	"io"
+	"fmt"
 	ifs "io/fs"
 	"log"
 	"os"
@@ -19,10 +18,17 @@ import (
 type cmd struct {
 	recursive bool
 	showln    bool
-
+	// revert bool
+	// boundary bool
 	keyword string
 	where   string
 }
+
+var (
+	green   = color.New(color.FgGreen).SprintFunc()
+	magenta = color.New(color.FgHiMagenta).SprintFunc()
+	cyan    = color.New(color.FgCyan).SprintFunc()
+)
 
 func usage(fs *flag.FlagSet) {
 	log.Print("usage: grep [-rnvH] <search-keyword> <where-to-search>")
@@ -32,7 +38,7 @@ func usage(fs *flag.FlagSet) {
 func main() {
 	log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
 
-	// todo: support [-rnvH] & [-r -n -v -H] & [--recursive --new-line --version] commands
+	// todo: support [-rnvH] & [-r -n -v -h -w] & [--recursive --new-line --invertmatch] commands
 	fs := flag.NewFlagSet("grep", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 
@@ -64,7 +70,7 @@ func main() {
 	}
 
 	// todo: read the .hidden files after normal files
-	filepath.WalkDir(where, func(path string, d ifs.DirEntry, err error) error {
+	err := filepath.WalkDir(where, func(path string, d ifs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -76,52 +82,54 @@ func main() {
 		}
 		return searchInFile(path, c)
 	})
+	if err != nil {
+		log.Fatalf("error traversing path: %v", err)
+	}
 }
 
 func searchInFile(file string, cmd cmd) error {
-	green := color.New(color.FgGreen).SprintFunc()
-	magenta := color.New(color.FgHiMagenta).SprintFunc()
-	cyan := color.New(color.FgCyan).SprintFunc()
-
 	f, err := os.Open(file)
 	if err != nil {
 		log.Printf("Error reading file: %s", f.Name())
 		return err
 	}
 	defer f.Close()
-	reader := bufio.NewReader(f)
-	searchRegex := `([\w]*)` + regexp.QuoteMeta(cmd.keyword) + `([\w]*)`
-	reg, _ := regexp.Compile(searchRegex)
 
+	searchRegex := regexp.QuoteMeta(cmd.keyword)
+	// searchRegex := `([\w]*)` + regexp.QuoteMeta(cmd.keyword) + `([\w]*)`
+	reg, err := regexp.Compile(searchRegex)
+	if err != nil {
+		log.Fatalf("invalid regex: %v", err)
+	}
+
+	scanner := bufio.NewScanner(f)
 	lineNumber := 0
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err.Error() == "EOF" {
-				break
-			}
-			log.Fatal("error reading file: ", f)
-		}
+	for scanner.Scan() {
 		lineNumber++
-
+		line := scanner.Text()
 		line = strings.TrimRight(line, "\r\n")
 		// line = strings.TrimSpace(line)
-		if reg.MatchString(line) {
-			// todo: highlight the searched text from line
+		matches := reg.FindAllStringIndex(line, -1)
+		if len(matches) > 0 {
 			var sb strings.Builder
 			sb.WriteString(green(file))
 			if cmd.showln {
 				sb.WriteString(":")
 				sb.WriteString(magenta(strconv.Itoa(lineNumber)))
-
 			}
 			sb.WriteString(": ")
-			sb.WriteString(cyan(line))
+			last := 0
+			for _, m := range matches {
+				sb.WriteString(line[last:m[0]])
+				sb.WriteString(cyan(line[m[0]:m[1]]))
+				last = m[1]
+			}
+			sb.WriteString(line[last:])
 			log.Print(sb.String())
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error scanning file %s: %w", file, err)
 	}
 	return nil
 }
