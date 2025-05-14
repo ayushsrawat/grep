@@ -16,18 +16,17 @@ import (
 )
 
 type cmd struct {
-	recursive bool
-	showln    bool
-	// revert bool
-	// boundary bool
-	keyword string
-	where   string
+	recursive     bool
+	showln        bool
+	caseSensitive bool
+	keyword       string
+	where         string
 }
 
 var (
 	green   = color.New(color.FgGreen).SprintFunc()
 	magenta = color.New(color.FgHiMagenta).SprintFunc()
-	cyan    = color.New(color.FgCyan).SprintFunc()
+	red     = color.New(color.FgRed).SprintFunc()
 )
 
 func usage(fs *flag.FlagSet) {
@@ -45,6 +44,7 @@ func main() {
 	help := fs.BoolP("help", "h", false, "Print a brief help message and exit.")
 	recursive := fs.BoolP("recursive", "r", false, "Recursively search subdirectories listed.")
 	showln := fs.BoolP("line-number", "n", false, "Each output line is preceded by its relative line number in the file, starting at line 1.  The line number counter is reset for each file processed.")
+	caseSensitive := fs.BoolP("case-sensitive", "c", false, "Perform case sensitive matching. By default, grep is case insensitive.")
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		usage(fs)
@@ -63,10 +63,11 @@ func main() {
 	}
 
 	c := cmd{
-		recursive: *recursive,
-		showln:    *showln,
-		keyword:   keyword,
-		where:     where,
+		recursive:     *recursive,
+		showln:        *showln,
+		keyword:       keyword,
+		where:         where,
+		caseSensitive: *caseSensitive,
 	}
 
 	// todo: read the .hidden files after normal files
@@ -78,6 +79,7 @@ func main() {
 			if *recursive {
 				return nil
 			}
+			// fixme: skipping level 0 dir when -r not provided?
 			return ifs.SkipDir
 		}
 		return searchInFile(path, c)
@@ -97,7 +99,11 @@ func searchInFile(file string, cmd cmd) error {
 
 	searchRegex := regexp.QuoteMeta(cmd.keyword)
 	// searchRegex := `([\w]*)` + regexp.QuoteMeta(cmd.keyword) + `([\w]*)`
-	reg, err := regexp.Compile(searchRegex)
+	ignoreCase := `(?i)`
+	if cmd.caseSensitive {
+		ignoreCase = ""
+	}
+	reg, err := regexp.Compile(ignoreCase + searchRegex)
 	if err != nil {
 		log.Fatalf("invalid regex: %v", err)
 	}
@@ -121,7 +127,7 @@ func searchInFile(file string, cmd cmd) error {
 			last := 0
 			for _, m := range matches {
 				sb.WriteString(line[last:m[0]])
-				sb.WriteString(cyan(line[m[0]:m[1]]))
+				sb.WriteString(red(line[m[0]:m[1]]))
 				last = m[1]
 			}
 			sb.WriteString(line[last:])
