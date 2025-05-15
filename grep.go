@@ -16,11 +16,11 @@ import (
 )
 
 type cmd struct {
-	recursive     bool
-	showln        bool
-	caseSensitive bool
 	keyword       string
 	where         string
+	recursive     int32
+	showln        bool
+	caseSensitive bool
 }
 
 var (
@@ -30,20 +30,19 @@ var (
 )
 
 func usage(fs *flag.FlagSet) {
-	log.Print("usage: grep [-rnvH] <search-keyword> <where-to-search>")
+	log.Print("usage: grep [-chl] [-r num] <search-keyword> <where-to-search>")
 	fs.PrintDefaults()
 }
 
 func main() {
 	log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
 
-	// todo: support [-rnvH] & [-r -n -v -h -w] & [--recursive --new-line --invertmatch] commands
 	fs := flag.NewFlagSet("grep", flag.ContinueOnError)
 	fs.SetOutput(os.Stdout)
 
 	help := fs.BoolP("help", "h", false, "Print a brief help message and exit.")
-	recursive := fs.BoolP("recursive", "r", false, "Recursively search subdirectories listed.")
-	showln := fs.BoolP("line-number", "n", false, "Each output line is preceded by its relative line number in the file, starting at line 1.  The line number counter is reset for each file processed.")
+	recursive := fs.Int32P("recursive", "r", -1, "The depth of recursive search in subdirectories listed. Default -1 (infinite depth).")
+	showln := fs.BoolP("line-number", "l", false, "Each output line is preceded by its relative line number in the file, starting at line 1.  The line number counter is reset for each file processed.")
 	caseSensitive := fs.BoolP("case-sensitive", "c", false, "Perform case sensitive matching. By default, grep is case insensitive.")
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
@@ -59,6 +58,7 @@ func main() {
 	keyword := args[0]
 	where := "."
 	if len(args) > 1 {
+		// todo: instead of just one where arg, consider taking multiple where files & directories
 		where = args[1]
 	}
 
@@ -70,17 +70,31 @@ func main() {
 		caseSensitive: *caseSensitive,
 	}
 
-	// todo: read the .hidden files after normal files
+	// todo: consider reading .hidden files after the normal files
 	err := filepath.WalkDir(where, func(path string, d ifs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			if *recursive {
+			depth := len(strings.Split(path, "/"))
+			if path == "." {
+				depth = 0
+			}
+			if c.recursive == -1 {
 				return nil
 			}
-			// fixme: skipping level 0 dir when -r not provided?
-			return ifs.SkipDir
+			if depth > int(c.recursive) {
+				return ifs.SkipDir
+			}
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			log.Printf("Error getting fileInfo: %s", path)
+			return err
+		}
+		if info.Mode().Perm()&0111 != 0 {
+			return nil // skipping executables
 		}
 		return searchInFile(path, c)
 	})
