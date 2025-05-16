@@ -21,16 +21,18 @@ type cmd struct {
 	recursive     int32
 	showln        bool
 	caseSensitive bool
+	invert        bool
 }
 
 var (
-	green   = color.New(color.FgGreen).SprintFunc()
-	magenta = color.New(color.FgHiMagenta).SprintFunc()
-	red     = color.New(color.FgRed).SprintFunc()
+	green     = color.New(color.FgGreen).SprintFunc()
+	magenta   = color.New(color.FgHiMagenta).SprintFunc()
+	red       = color.New(color.FgRed).SprintFunc()
+	ignoreDir = []string{".git", ".svn"}
 )
 
 func usage(fs *flag.FlagSet) {
-	log.Print("usage: grep [-chl] [-r num] <search-keyword> <where-to-search>")
+	log.Print("usage: grep [-chlv] [-r num] <search-keyword> <where-to-search>")
 	fs.PrintDefaults()
 }
 
@@ -44,6 +46,7 @@ func main() {
 	recursive := fs.Int32P("recursive", "r", -1, "The depth of recursive search in subdirectories listed. Default -1 (infinite depth).")
 	showln := fs.BoolP("line-number", "l", false, "Each output line is preceded by its relative line number in the file, starting at line 1.  The line number counter is reset for each file processed.")
 	caseSensitive := fs.BoolP("case-sensitive", "c", false, "Perform case sensitive matching. By default, grep is case insensitive.")
+	invert := fs.BoolP("invert-match", "v", false, "Selected lines are those not matching any of the specified patterns.")
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		usage(fs)
@@ -68,6 +71,7 @@ func main() {
 		keyword:       keyword,
 		where:         where,
 		caseSensitive: *caseSensitive,
+		invert:        *invert,
 	}
 
 	// todo: consider reading .hidden files after the normal files
@@ -76,6 +80,12 @@ func main() {
 			return err
 		}
 		if d.IsDir() {
+			for _, d := range ignoreDir {
+				if strings.HasPrefix(path, d) {
+					return ifs.SkipDir
+				}
+			}
+
 			depth := len(strings.Split(path, "/"))
 			if path == "." {
 				depth = 0
@@ -130,7 +140,7 @@ func searchInFile(file string, cmd cmd) error {
 		line = strings.TrimRight(line, "\r\n")
 		// line = strings.TrimSpace(line)
 		matches := reg.FindAllStringIndex(line, -1)
-		if len(matches) > 0 {
+		if (!cmd.invert && len(matches) > 0) || (cmd.invert && len(matches) == 0) {
 			var sb strings.Builder
 			sb.WriteString(green(file))
 			if cmd.showln {
